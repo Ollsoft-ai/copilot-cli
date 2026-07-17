@@ -8,8 +8,10 @@ _COMMANDS = [
     ("switch",       "Switch the active company (without re-logging in)."),
     ("init",         "Download compliance rules into the current project."),
     ("update",       "Update compliance rules (overwrites existing files)."),
+    ("rules",        "List all workspace rules (paginated: --limit, --offset)."),
     ("search-rules", "Search rules by keyword or meaning."),
-    ("keywords",     "List all unique keywords across active compliance rules.")
+    ("tags",         "List all unique tags across active compliance rules."),
+    ("keywords",     "List all unique keywords across active compliance rules."),
 ]
 
 

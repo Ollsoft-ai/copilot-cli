@@ -2,18 +2,50 @@ from pathlib import Path
 
 import click
 import httpx
+import questionary
 
 from .. import api
 from ..utils import console, require_auth, require_company
+
+_PICKER_STYLE = questionary.Style([
+    ("selected",    "fg:#E20074 bold"),
+    ("pointer",     "fg:#E20074 bold"),
+    ("highlighted", "fg:#E20074"),
+    ("question",    "bold"),
+    ("answer",      "fg:#E20074 bold"),
+])
 
 
 # ---------------------------------------------------------------------------
 # Init / Update
 # ---------------------------------------------------------------------------
 
-def _download_compliance_files() -> int:
+def _pick_skill_type() -> str:
     try:
-        data = api.skills_init()
+        skills = api.skills_list()
+    except httpx.HTTPStatusError as exc:
+        console.print(f"[bold yellow]Warning:[/] Could not fetch skill types: {exc.response.text}")
+        return "opencode"
+
+    if len(skills) == 1:
+        return skills[0]
+
+    chosen = questionary.select(
+        "Select agent type:",
+        choices=skills,
+        style=_PICKER_STYLE,
+    ).ask()
+
+    if chosen is None:
+        console.print("[yellow]Selection cancelled.[/]")
+        raise SystemExit(0)
+
+    return chosen
+
+
+def _download_compliance_files(skill_type: str) -> int:
+    try:
+        data = api.skills_init(skill_type)
     except httpx.HTTPStatusError as exc:
         console.print(f"[bold red]Error:[/] {exc.response.text}")
         raise SystemExit(1)
@@ -29,18 +61,20 @@ def _download_compliance_files() -> int:
 
 @click.command()
 def init() -> None:
-    """Download .compliance rules from the server into the current directory."""
+    """Download compliance rules from the server into the current directory."""
     require_auth()
-    count = _download_compliance_files()
-    console.print(f"\n[bold green]Initialized {count} file(s) into .opencode/[/]")
+    skill_type = _pick_skill_type()
+    count = _download_compliance_files(skill_type)
+    console.print(f"\n[bold green]Initialized {count} file(s) into .{skill_type}/[/]")
 
 
 @click.command()
 def update() -> None:
-    """Update .compliance rules from the server (overwrites existing files)."""
+    """Update compliance rules from the server (overwrites existing files)."""
     require_auth()
-    count = _download_compliance_files()
-    console.print(f"\n[bold green]Updated {count} file(s) in .opencode/[/]")
+    skill_type = _pick_skill_type()
+    count = _download_compliance_files(skill_type)
+    console.print(f"\n[bold green]Updated {count} file(s) in .{skill_type}/[/]")
 
 
 # ---------------------------------------------------------------------------
@@ -48,28 +82,53 @@ def update() -> None:
 # ---------------------------------------------------------------------------
 
 @click.command()
-def rules() -> None:
-    """List active compliance rules from the server."""
+@click.option(
+    "--limit",
+    default=100,
+    show_default=True,
+    type=click.IntRange(1, 500),
+    metavar="N",
+    help="Maximum number of rules to return (backend cap: 500).",
+)
+@click.option(
+    "--offset",
+    default=0,
+    show_default=True,
+    type=click.IntRange(0),
+    metavar="N",
+    help="Number of rules to skip for pagination.",
+)
+def rules(limit: int, offset: int) -> None:
+    """List all workspace rules from the server.
+
+    \b
+    Examples:
+      compliance rules
+      compliance rules --limit 100 --offset 0
+      compliance rules --limit 100 --offset 100
+    """
     require_auth()
     company_id, company_name = require_company()
 
     try:
-        data: list[dict] = api.rules_list(company_id)
+        data: list[dict] = api.rules_list(company_id, limit=limit, offset=offset)
     except httpx.HTTPStatusError as exc:
         console.print(f"[bold red]Error:[/] {exc.response.text}")
         raise SystemExit(1)
 
     if not data:
-        console.print("No active rules found for this company.")
+        console.print("No rules found for this company.")
         return
 
-    console.print(f"\nActive Rules - {company_name} ({len(data)})\n")
+    page_from = offset + 1
+    page_to = offset + len(data)
+    console.print(f"\nRules - {company_name} (#{page_from}-{page_to})\n")
 
-    for i, rule in enumerate(data, 1):
+    for i, rule in enumerate(data, page_from):
         name = rule.get("name", "")
         text = rule.get("text", "")
         severity = (rule.get("severity") or "MEDIUM").upper()
-        flags = rule.get("flags") or []
+        flags = rule.get("flags") or rule.get("tags") or []
         source_url = rule.get("source_url", "")
 
         console.print(f"[{i}] [bold]{name}[/]  [{severity}]")
@@ -80,6 +139,9 @@ def rules() -> None:
             console.print(f"    Source: {source_url}")
         console.print()
 
+    if len(data) == limit:
+        console.print(f"  -> next page: compliance rules --limit {limit} --offset {offset + limit}")
+
 
 # ---------------------------------------------------------------------------
 # Tags
@@ -87,12 +149,12 @@ def rules() -> None:
 
 @click.command()
 def tags() -> None:
-    """List all unique tags across active compliance rules."""
+    """List all unique tags across active compliance rules, with rule counts."""
     require_auth()
     company_id, _ = require_company()
 
     try:
-        data: list[str] = api.tags_list(company_id)
+        data: dict[str, int] = api.tags_list(company_id)
     except httpx.HTTPStatusError as exc:
         console.print(f"[bold red]Error:[/] {exc.response.text}")
         raise SystemExit(1)
@@ -101,7 +163,8 @@ def tags() -> None:
         console.print("No tags found for this company.")
         return
 
-    console.print(f"\nTags library:\n{','.join(data)}\n")
+    formatted = ", ".join(f"{tag}({count})" for tag, count in data.items())
+    console.print(f"\nTags library ({len(data)}):\n{formatted}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +215,7 @@ def keywords() -> None:
     default=10,
     show_default=True,
     metavar="N",
-    help="Max number of results (backend cap: 100).",
+    help="Max number of results (backend cap: 500).",
 )
 @click.option(
     "--offset",
@@ -171,7 +234,8 @@ def search_rules(
     """Search compliance rules by keyword or meaning.
 
     QUERY is an optional free-text search (semantic + BM25).
-    You can omit it and use --flags / --severity for filter-only mode.
+    You can omit it and use --flags / --severity for filter-only mode,
+    or omit everything and just page through all rules with --limit/--offset.
 
     \b
     Examples:
@@ -179,10 +243,8 @@ def search_rules(
       compliance search-rules "logging user data" --flags gdpr,logging --severity HIGH
       compliance search-rules --flags auth,backend
       compliance search-rules "logging sensitive data" --flags gdpr --limit 10 --offset 10
+      compliance search-rules --limit 50 --offset 100
     """
-    if not query and not flags and not severity:
-        raise click.UsageError("Provide a QUERY, --flags, or --severity (or a combination).")
-
     require_auth()
     company_id, company_name = require_company()
 
@@ -195,7 +257,7 @@ def search_rules(
             query=query,
             tags=tags,
             severity=severity_list,
-            limit=min(limit, 100),
+            limit=min(limit, 500),
             offset=offset,
         )
     except httpx.HTTPStatusError as exc:
@@ -233,11 +295,14 @@ def search_rules(
         name = rule.get("name", "")
         text = rule.get("text", "")
         severity_val = (rule.get("severity") or "NONE").upper()
-        rule_flags = rule.get("flags") or []
+        rule_flags = rule.get("tags") or []
+       # filename = rule.get("document_filename")
         source_url = rule.get("source_url", "")
 
         click.echo(f"[{i}] {name}  [{severity_val}]")
         click.echo(f"    {text}")
+       # if filename:
+       #     click.echo(f"    File: {filename}")
         if rule_flags:
             click.echo(f"    Flags: {', '.join(rule_flags)}")
         if source_url:

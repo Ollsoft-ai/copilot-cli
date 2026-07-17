@@ -37,9 +37,16 @@ def create_pat(access_token: str, name: str) -> str:
         return resp.json()["token"]
 
 
-def skills_init() -> dict:
+def skills_list() -> list[str]:
     with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
-        resp = client.get("/api/skills/init")
+        resp = client.get("/api/skills/list")
+        resp.raise_for_status()
+        return resp.json()
+
+
+def skills_init(skill_type: str) -> dict:
+    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+        resp = client.get("/api/skills/init", params={"type": skill_type})
         resp.raise_for_status()
         return resp.json()
 
@@ -84,14 +91,18 @@ def companies_list() -> list[dict]:
         return resp.json()
 
 
-def rules_list(company_id: str) -> list[dict]:
+def rules_list(company_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
     with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
-        resp = client.get("/api/rules/agent", params={"company_id": company_id})
+        resp = client.get(
+            "/api/rules/",
+            params={"company_id": company_id, "limit": limit, "offset": offset},
+        )
         resp.raise_for_status()
         return resp.json()
 
 
-def tags_list(company_id: str) -> list[str]:
+def tags_list(company_id: str) -> dict[str, int]:
+    """Tag -> number of approved rules carrying it, e.g. {"auth": 84, "backend": 92}."""
     with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/agent/tags", params={"company_id": company_id})
         resp.raise_for_status()

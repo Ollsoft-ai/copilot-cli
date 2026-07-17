@@ -8,6 +8,7 @@ from ..utils import console, require_auth
 
 
 def pick_and_save_company() -> None:
+    """Fetch companies and interactively save the active one."""
     try:
         companies = api.companies_list()
     except httpx.HTTPStatusError as exc:
