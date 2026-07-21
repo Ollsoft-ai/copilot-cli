@@ -116,6 +116,22 @@ def keywords_list(company_id: str) -> list[str]:
         return resp.json()
 
 
+def list_documents(company_id: str) -> list[dict]:
+    """Returns all documents (id, filename) for the company."""
+    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+        resp = client.get("/api/agent/documents", params={"company_id": company_id})
+        resp.raise_for_status()
+        return resp.json()
+
+
+def document_markdown(company_id: str, doc_id: str) -> dict:
+    """Fetch markdown + filename for a single document."""
+    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+        resp = client.get(f"/api/agent/documents/{doc_id}/markdown", params={"company_id": company_id})
+        resp.raise_for_status()
+        return resp.json()
+
+
 def rules_search(
     company_id: str,
     query: str | None = None,
@@ -133,6 +149,14 @@ def rules_search(
         params["severity"] = severity
     with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/agent/search", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
+def catalogue_list(company_id: str) -> list[dict]:
+    """Returns [{id, filename, preface}] for all documents in the workspace."""
+    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+        resp = client.get("/api/agent/documents", params={"company_id": company_id})
         resp.raise_for_status()
         return resp.json()
 

@@ -9,7 +9,9 @@ from .commands.auth import login, logout
 from .commands.workspace import switch
 from .commands.rules import init, update, rules, search_rules, tags, keywords
 from .commands.telemetry import report_event
+from .commands.catalogue import get_catalogue
 from .commands.help import help_cmd
+from .commands.docs import get_docs
 
 
 def _make_output_streams_unicode_safe() -> None:
@@ -47,7 +49,9 @@ main.add_command(search_rules)
 main.add_command(tags)
 main.add_command(keywords)
 main.add_command(report_event)
+main.add_command(get_catalogue)
 main.add_command(help_cmd)
+main.add_command(get_docs)
 
 
 @main.command()

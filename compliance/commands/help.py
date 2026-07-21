@@ -12,6 +12,7 @@ _COMMANDS = [
     ("search-rules", "Search rules by keyword or meaning."),
     ("tags",         "List all unique tags across active compliance rules."),
     ("keywords",     "List all unique keywords across active compliance rules."),
+    ("get-catalogue","List all documents with their ID, filename and preface."),
 ]
 
 
