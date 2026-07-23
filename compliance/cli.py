@@ -60,7 +60,7 @@ main.add_command(get_docs)
 
 @main.command()
 def health() -> None:
-    """Check if the backend server is reachable."""
+    """Check if the backend server is reachable.  """
     try:
         data = api.health()
         console.print(f"[bold green]Server status:[/] {data.get('status', 'ok')}")
