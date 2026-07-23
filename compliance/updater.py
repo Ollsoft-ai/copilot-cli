@@ -1,18 +1,14 @@
-"""Auto-update: checks GitHub Releases once per day and upgrades if a newer version exists."""
+"""Auto-update: checks GitHub Releases on every command run and upgrades if a newer version exists."""
 
-import json
 import subprocess
 import sys
-from datetime import date
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
 
 import httpx
 
 _PACKAGE = "compliance-copilot"
 _GITHUB_REPO = "Ollsoft-ai/copilot-cli"
 _INSTALL_URL = "git+https://github.com/Ollsoft-ai/copilot-cli.git"
-_CHECK_FILE = Path.home() / ".compliance" / "update_check.json"
 
 
 def _current_version() -> str | None:
@@ -22,27 +18,9 @@ def _current_version() -> str | None:
         return None
 
 
-def _load_check() -> dict:
-    try:
-        return json.loads(_CHECK_FILE.read_text()) if _CHECK_FILE.exists() else {}
-    except Exception:
-        return {}
-
-
-def _save_check(data: dict) -> None:
-    _CHECK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _CHECK_FILE.write_text(json.dumps(data))
-
-
 def check_and_update() -> None:
-    """Check GitHub Releases for a newer version once per day and auto-upgrade."""
-    data = _load_check()
-    if data.get("date") == date.today().isoformat():
-        return  # already checked today
-
+    """Check GitHub Releases on every run and auto-upgrade if a newer version exists."""
     current = _current_version()
-    _save_check({"date": date.today().isoformat()})
-
     if current is None:
         return
 
