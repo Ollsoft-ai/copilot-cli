@@ -4,6 +4,7 @@ import click
 import httpx
 
 from . import api
+from .updater import check_and_update
 from .utils import console
 from .commands.auth import login, logout
 from .commands.workspace import switch
@@ -35,8 +36,11 @@ _make_output_streams_unicode_safe()
 
 
 @click.group()
-def main() -> None:
+@click.pass_context
+def main(ctx: click.Context) -> None:
     """Compliance Copilot CLI"""
+    if ctx.invoked_subcommand is not None:
+        check_and_update()
 
 
 main.add_command(login)
