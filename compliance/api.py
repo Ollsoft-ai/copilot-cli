@@ -132,6 +132,17 @@ def document_markdown(company_id: str, doc_id: str) -> dict:
         return resp.json()
 
 
+def rules_markdown(company_id: str, doc_ids: list[int]) -> str:
+    """Fetch all active rules for the given document IDs as a single markdown string."""
+    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+        resp = client.get(
+            "/api/agent/documents/rules-markdown",
+            params=[("company_id", company_id)] + [("doc_ids", i) for i in doc_ids],
+        )
+        resp.raise_for_status()
+        return resp.text
+
+
 def rules_search(
     company_id: str,
     query: str | None = None,

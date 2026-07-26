@@ -13,6 +13,7 @@ from .commands.telemetry import report_event
 from .commands.catalogue import get_catalogue
 from .commands.help import help_cmd
 from .commands.docs import get_docs
+from .commands.get_rules import get_rules
 
 
 def _make_output_streams_unicode_safe() -> None:
@@ -56,6 +57,7 @@ main.add_command(report_event)
 main.add_command(get_catalogue)
 main.add_command(help_cmd)
 main.add_command(get_docs)
+main.add_command(get_rules)
 
 
 @main.command()
