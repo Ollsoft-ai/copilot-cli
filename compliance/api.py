@@ -17,9 +17,25 @@ def _auth_headers(access_token: str | None = None) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def login(email: str, password: str) -> dict:
+def device_start() -> dict:
+    """Kicks off an RFC 8628-style login. Returns device_code/user_code/expires_in/interval."""
     with httpx.Client(base_url=SERVER_URL) as client:
-        resp = client.post("/api/auth/login", json={"email": email, "password": password})
+        resp = client.post("/api/auth/device/start")
+        resp.raise_for_status()
+        return resp.json()
+
+
+def device_token(device_code: str) -> dict:
+    """Polled while waiting for browser approval.
+
+    Returns `{"token": ..., "token_type": ...}` once approved, or
+    `{"error": "authorization_pending" | "expired_token"}` while waiting /
+    after the code has gone stale — both are expected 400s, not failures.
+    """
+    with httpx.Client(base_url=SERVER_URL) as client:
+        resp = client.post("/api/auth/device/token", json={"device_code": device_code})
+        if resp.status_code == 400:
+            return {"error": resp.json().get("detail", "expired_token")}
         resp.raise_for_status()
         return resp.json()
 
@@ -28,13 +44,6 @@ def logout() -> None:
     with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.post("/api/auth/logout")
         resp.raise_for_status()
-
-
-def create_pat(access_token: str, name: str) -> str:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers(access_token)) as client:
-        resp = client.post("/api/auth/token", json={"name": name})
-        resp.raise_for_status()
-        return resp.json()["token"]
 
 
 def skills_list() -> list[str]:
@@ -86,9 +95,12 @@ def documents_delete(doc_id: int) -> None:
 
 def companies_list() -> list[dict]:
     with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
-        resp = client.get("/api/companies/")
+        # The endpoint is paginated ({"items": [...], "total": ..., ...}), not
+        # a bare list -- default limit is 100, well above what any account is
+        # expected to have, so the CLI's one-shot picker never needs to page.
+        resp = client.get("/api/companies/", params={"limit": 100})
         resp.raise_for_status()
-        return resp.json()
+        return resp.json()["items"]
 
 
 def rules_list(company_id: str, limit: int = 100, offset: int = 0) -> list[dict]:

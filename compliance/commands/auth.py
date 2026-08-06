@@ -1,85 +1,54 @@
-import threading
+import time
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
 
 import click
 import httpx
 
 from .. import api
-from ..config import (
-    CALLBACK_PORT, FRONTEND_URL,
-    clear_tokens, default_token_name,
-    load_pat, save_pat, save_tokens,
-    load_company,
-)
+from ..browser import has_gui_browser
+from ..config import FRONTEND_URL, clear_tokens, load_company, load_pat, save_pat
 from ..utils import console, require_auth
 from .workspace import pick_and_save_company
 
 
-def _browser_login() -> dict:
-    result: dict = {}
-    ready = threading.Event()
+def _device_login() -> str:
+    """RFC 8628-style device flow: the CLI polls the backend while the user
+    approves the login in a browser tab. Works headless (SSH, containers) as
+    well as locally -- there's no loopback server to reach, just a URL the
+    user can open on any device. Returns a PAT ready to save; the backend
+    mints it directly on approval, so no separate exchange step is needed.
+    """
+    start = api.device_start()
+    device_code, user_code = start["device_code"], start["user_code"]
+    interval, expires_in = start["interval"], start["expires_in"]
+    login_url = f"{FRONTEND_URL}/cli-authorize?device_code={device_code}"
 
-    class _Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            path = urlparse(self.path).path
-            if path == "/ping":
-                self._respond(b"ok")
-                return
-            if path == "/callback":
-                params = parse_qs(urlparse(self.path).query)
-                result["access_token"] = params.get("access_token", [None])[0]
-                result["refresh_token"] = params.get("refresh_token", [None])[0]
-                self._respond(b"<script>window.close()</script>")
-                threading.Thread(target=server.shutdown, daemon=True).start()
-                ready.set()
-                return
-            self._respond(b"")
+    if has_gui_browser():
+        webbrowser.open(login_url)
+        console.print(f"Opening browser: [dim]{login_url}[/]")
+    else:
+        console.print("Open this URL in a browser to continue:")
+        console.print(f"[cyan]{login_url}[/]")
+    # Shown so the user can check it against the page the browser opened --
+    # a mismatch means the link isn't the one this terminal generated.
+    console.print(f"Confirm the code shown in the browser matches: [bold]{user_code}[/]")
+    console.print("Waiting for authorization  [dim](Ctrl+C to cancel)[/]")
 
-        def _respond(self, body: bytes) -> None:
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *_):
-            pass
-
-    server = HTTPServer(("localhost", CALLBACK_PORT), _Handler)
-    callback_uri = f"http://localhost:{CALLBACK_PORT}/callback"
-    login_url = f"{FRONTEND_URL}/cli-login?redirect_uri={callback_uri}"
-
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    webbrowser.open(login_url)
-    console.print(f"Opening browser: [dim]{login_url}[/]")
-    console.print("Waiting for authentication  [dim](Ctrl+C to cancel)[/]")
-
+    deadline = time.monotonic() + expires_in
     try:
-        deadline = 120
-        elapsed = 0
-        while not ready.is_set() and elapsed < deadline:
-            ready.wait(timeout=0.5)
-            elapsed += 0.5
+        while time.monotonic() < deadline:
+            time.sleep(interval)
+            result = api.device_token(device_code)
+            if result.get("error") == "authorization_pending":
+                continue
+            if result.get("error"):
+                break
+            return result["token"]
     except KeyboardInterrupt:
         console.print("\n[yellow]Login cancelled.[/]")
-        server.shutdown()
         raise SystemExit(0)
 
-    if not result.get("access_token"):
-        raise RuntimeError("Authentication timed out or was cancelled.")
-
-    return result
-
-
-def _exchange_for_pat(access_token: str) -> str:
-    name = default_token_name()
-    pat = api.create_pat(access_token, name)
-    save_pat(pat)
-    return pat
+    raise RuntimeError("The login link expired. Run `compliance login` again.")
 
 
 @click.command()
@@ -92,8 +61,7 @@ def login() -> None:
             console.print(f"  Active company: [cyan]{existing[1]}[/]")
         return
     try:
-        tokens = _browser_login()
-        _exchange_for_pat(tokens["access_token"])
+        save_pat(_device_login())
         console.print("[bold green]Logged in successfully.[/]")
         pick_and_save_company()
         console.print("\nRun [cyan]compliance help[/] to see available commands.")
