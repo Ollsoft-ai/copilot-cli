@@ -40,6 +40,14 @@ def device_token(device_code: str) -> dict:
         return resp.json()
 
 
+def device_cancel(device_code: str) -> None:
+    """Best-effort notice that the CLI gave up waiting (Ctrl+C) — lets the
+    backend stop treating the code as approvable so a click on the browser
+    tab after cancelling doesn't falsely report success."""
+    with httpx.Client(base_url=SERVER_URL) as client:
+        client.post("/api/auth/device/cancel", json={"device_code": device_code})
+
+
 def logout() -> None:
     with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.post("/api/auth/logout")

@@ -46,6 +46,13 @@ def _device_login() -> str:
             return result["token"]
     except KeyboardInterrupt:
         console.print("\n[yellow]Login cancelled.[/]")
+        # Best-effort: if the request fails, the code simply lives out its
+        # TTL server-side instead of being cleaned up immediately. Either way
+        # the CLI is exiting, so there is nothing else to do with an error here.
+        try:
+            api.device_cancel(device_code)
+        except Exception:
+            pass
         raise SystemExit(0)
 
     raise RuntimeError("The login link expired. Run `compliance login` again.")
