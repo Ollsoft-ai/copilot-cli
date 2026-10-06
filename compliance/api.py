@@ -4,6 +4,15 @@ import httpx
 
 from .config import SERVER_URL, load_tokens
 
+# httpx defaults to 5s, which aborts agent calls before the backend responds.
+_TIMEOUT = httpx.Timeout(300.0, connect=10.0)
+
+
+def _client(**kwargs) -> httpx.Client:
+    kwargs.setdefault("base_url", SERVER_URL)
+    kwargs.setdefault("timeout", _TIMEOUT)
+    return httpx.Client(**kwargs)
+
 
 def _auth_headers(access_token: str | None = None) -> dict[str, str]:
     if access_token:
@@ -19,7 +28,7 @@ def _auth_headers(access_token: str | None = None) -> dict[str, str]:
 
 def device_start() -> dict:
     """Kicks off an RFC 8628-style login. Returns device_code/user_code/expires_in/interval."""
-    with httpx.Client(base_url=SERVER_URL) as client:
+    with _client(base_url=SERVER_URL) as client:
         resp = client.post("/api/auth/device/start")
         resp.raise_for_status()
         return resp.json()
@@ -32,7 +41,7 @@ def device_token(device_code: str) -> dict:
     `{"error": "authorization_pending" | "expired_token"}` while waiting /
     after the code has gone stale — both are expected 400s, not failures.
     """
-    with httpx.Client(base_url=SERVER_URL) as client:
+    with _client(base_url=SERVER_URL) as client:
         resp = client.post("/api/auth/device/token", json={"device_code": device_code})
         if resp.status_code == 400:
             return {"error": resp.json().get("detail", "expired_token")}
@@ -44,39 +53,39 @@ def device_cancel(device_code: str) -> None:
     """Best-effort notice that the CLI gave up waiting (Ctrl+C) — lets the
     backend stop treating the code as approvable so a click on the browser
     tab after cancelling doesn't falsely report success."""
-    with httpx.Client(base_url=SERVER_URL) as client:
+    with _client(base_url=SERVER_URL) as client:
         client.post("/api/auth/device/cancel", json={"device_code": device_code})
 
 
 def logout() -> None:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.post("/api/auth/logout")
         resp.raise_for_status()
 
 
 def skills_list() -> list[str]:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/skills/list")
         resp.raise_for_status()
         return resp.json()
 
 
 def skills_init(skill_type: str) -> dict:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/skills/init", params={"type": skill_type})
         resp.raise_for_status()
         return resp.json()
 
 
 def documents_list() -> list:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/documents/")
         resp.raise_for_status()
         return resp.json()
 
 
 def documents_get(doc_id: int) -> dict:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get(f"/api/documents/{doc_id}")
         resp.raise_for_status()
         return resp.json()
@@ -86,7 +95,7 @@ def documents_upload(file_paths: list[str]) -> list:
     handles = [open(p, "rb") for p in file_paths]
     try:
         files = [("files", (Path(p).name, fh)) for p, fh in zip(file_paths, handles)]
-        with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+        with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
             resp = client.post("/api/documents/upload", files=files)
             resp.raise_for_status()
             return resp.json()
@@ -96,13 +105,13 @@ def documents_upload(file_paths: list[str]) -> list:
 
 
 def documents_delete(doc_id: int) -> None:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.delete(f"/api/documents/{doc_id}")
         resp.raise_for_status()
 
 
 def companies_list() -> list[dict]:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         # The endpoint is paginated ({"items": [...], "total": ..., ...}), not
         # a bare list -- default limit is 100, well above what any account is
         # expected to have, so the CLI's one-shot picker never needs to page.
@@ -112,7 +121,7 @@ def companies_list() -> list[dict]:
 
 
 def rules_list(company_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get(
             "/api/rules/",
             params={"company_id": company_id, "limit": limit, "offset": offset},
@@ -123,14 +132,14 @@ def rules_list(company_id: str, limit: int = 100, offset: int = 0) -> list[dict]
 
 def tags_list(company_id: str) -> dict[str, int]:
     """Tag -> number of approved rules carrying it, e.g. {"auth": 84, "backend": 92}."""
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/agent/tags", params={"company_id": company_id})
         resp.raise_for_status()
         return resp.json()
 
 
 def keywords_list(company_id: str) -> list[str]:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/agent/keywords", params={"company_id": company_id})
         resp.raise_for_status()
         return resp.json()
@@ -138,7 +147,7 @@ def keywords_list(company_id: str) -> list[str]:
 
 def list_documents(company_id: str) -> list[dict]:
     """Returns all documents (id, filename) for the company."""
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/agent/documents", params={"company_id": company_id})
         resp.raise_for_status()
         return resp.json()
@@ -146,7 +155,7 @@ def list_documents(company_id: str) -> list[dict]:
 
 def document_markdown(company_id: str, doc_id: str) -> dict:
     """Fetch markdown + filename for a single document."""
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get(f"/api/agent/documents/{doc_id}/markdown", params={"company_id": company_id})
         resp.raise_for_status()
         return resp.json()
@@ -154,7 +163,7 @@ def document_markdown(company_id: str, doc_id: str) -> dict:
 
 def rules_markdown(company_id: str, doc_ids: list[int]) -> str:
     """Fetch all active rules for the given document IDs as a single markdown string."""
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get(
             "/api/agent/documents/rules-markdown",
             params=[("company_id", company_id)] + [("doc_ids", i) for i in doc_ids],
@@ -178,7 +187,7 @@ def rules_search(
         params["tags"] = tags
     if severity:
         params["severity"] = severity
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/agent/search", params=params)
         resp.raise_for_status()
         return resp.json()
@@ -186,21 +195,21 @@ def rules_search(
 
 def catalogue_list(company_id: str) -> list[dict]:
     """Returns [{id, filename, preface}] for all documents in the workspace."""
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.get("/api/agent/documents", params={"company_id": company_id})
         resp.raise_for_status()
         return resp.json()
 
 
 def report_event(payload: dict) -> None:
-    with httpx.Client(base_url=SERVER_URL, headers=_auth_headers()) as client:
+    with _client(base_url=SERVER_URL, headers=_auth_headers()) as client:
         resp = client.post("/api/telemetry/report_event", json=payload)
         resp.raise_for_status()
 
 
 
 def health() -> dict:
-    with httpx.Client(base_url=SERVER_URL) as client:
+    with _client(base_url=SERVER_URL) as client:
         resp = client.get("/api/health")
         resp.raise_for_status()
         return resp.json()
