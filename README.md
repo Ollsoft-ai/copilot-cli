@@ -1,6 +1,6 @@
 # Compliance Copilot CLI
 
-Command-line interface for [Compliance Copilot](https://compliance.ollsoft.org) — manage compliance rules, search your rule library directly from the terminal.
+Command-line interface for [Compliance Copilot](https://compliance.conmob.t-systems.net) — manage compliance rules, search your rule library directly from the terminal.
 
 ## Installation
 
@@ -18,6 +18,8 @@ compliance init
 ```
 
 `login` opens a browser window for authentication and saves a long-lived token locally. `init` downloads your company's compliance rules into the current project directory.
+
+The CLI talks to https://compliance.conmob.t-systems.net. To use another instance, set `COMPLIANCE_SERVER_URL` (and `COMPLIANCE_FRONTEND_URL` if the web app lives elsewhere), e.g. `COMPLIANCE_SERVER_URL=https://compliance.ollsoft.org compliance login`.
 
 ## Commands
 
