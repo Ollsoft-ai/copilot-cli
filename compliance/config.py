@@ -1,9 +1,11 @@
 import json
+import os
 import socket
 from pathlib import Path
 
-SERVER_URL: str = "https://compliance.ollsoft.org"
-FRONTEND_URL: str = "https://compliance.ollsoft.org"
+# COMPLIANCE_SERVER_URL / COMPLIANCE_FRONTEND_URL point the CLI at another instance.
+SERVER_URL: str = os.environ.get("COMPLIANCE_SERVER_URL", "https://compliance.conmob.t-systems.net").rstrip("/")
+FRONTEND_URL: str = os.environ.get("COMPLIANCE_FRONTEND_URL", SERVER_URL).rstrip("/")
 CALLBACK_PORT: int = 9876
 
 _AUTH_FILE: Path = Path.home() / ".compliance" / "auth.json"
